@@ -131,9 +131,16 @@ class FlorenceDetector(ObjectDetector):
 
     def detect(self, image: Image.Image, target_objects: Union[str, List[str]]) -> Tuple[List[float], List[List[int]], List[str]]:
         """Detect objects using Florence"""
-        # Handle list of objects
-        if isinstance(target_objects, list):
-            target_objects = ' or '.join(target_objects)  # Convert list to "obj1 or obj2 or obj3" format
+        # Generate text prompt from target objects provided. The special case
+        # of * should allow Florence-2 to detect any object which seems to
+        # require just using its plain object detection functionality.
+        if target_objects == "*":
+            text = "<OD>"
+        elif isinstance(target_objects, list):
+            joined = " or ".join(target_objects)
+            text = f"<CAPTION_TO_PHRASE_GROUNDING> {joined}"
+        else:
+            text = f"<CAPTION_TO_PHRASE_GROUNDING> {target_objects}"
             
         # Resize image for Florence
         new_width = image.width // 8
@@ -144,7 +151,7 @@ class FlorenceDetector(ObjectDetector):
 
         task_prompt = "<CAPTION_TO_PHRASE_GROUNDING>"
         inputs = self.processor(
-            text=task_prompt + target_objects,
+            text=text,
             images=resized_image,
             return_tensors="pt"
         ).to(self.device, self.torch_dtype)
