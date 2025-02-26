@@ -149,7 +149,6 @@ class FlorenceDetector(ObjectDetector):
         height_correction = image.height / new_height
         resized_image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
 
-        task_prompt = "<CAPTION_TO_PHRASE_GROUNDING>"
         inputs = self.processor(
             text=text,
             images=resized_image,
@@ -167,7 +166,7 @@ class FlorenceDetector(ObjectDetector):
         generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
         results = self.processor.post_process_generation(
             generated_text,
-            task=task_prompt,
+            task=text,
             image_size=(resized_image.width, resized_image.height)
         )
 
