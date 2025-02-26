@@ -136,11 +136,14 @@ class FlorenceDetector(ObjectDetector):
         # require just using its plain object detection functionality.
         if target_objects == "*":
             text = "<OD>"
+            task = "<OD>"
         elif isinstance(target_objects, list):
             joined = " or ".join(target_objects)
             text = f"<CAPTION_TO_PHRASE_GROUNDING> {joined}"
+            task = "<CAPTION_TO_PHRASE_GROUNDING>"
         else:
             text = f"<CAPTION_TO_PHRASE_GROUNDING> {target_objects}"
+            task = "<CAPTION_TO_PHRASE_GROUNDING>"
             
         # Resize image for Florence
         new_width = image.width // 8
@@ -170,8 +173,8 @@ class FlorenceDetector(ObjectDetector):
             image_size=(resized_image.width, resized_image.height)
         )
 
-        bboxes = results['<CAPTION_TO_PHRASE_GROUNDING>']['bboxes']
-        labels = results['<CAPTION_TO_PHRASE_GROUNDING>']['labels']
+        bboxes = results[task]['bboxes']
+        labels = results[task]['labels']
 
         # Correct bounding box coordinates
         for bbox in bboxes:
