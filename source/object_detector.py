@@ -134,7 +134,7 @@ class FlorenceDetector(ObjectDetector):
         # Generate text prompt from target objects provided. The special case
         # of * should allow Florence-2 to detect any object which seems to
         # require just using its plain object detection functionality.
-        if target_objects == "*":
+        if target_objects == "*" or (isinstance(target_objects, list) and "*" in target_objects):
             text = "<OD>"
             task = "<OD>"
         elif isinstance(target_objects, list):
@@ -169,10 +169,12 @@ class FlorenceDetector(ObjectDetector):
         generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
         results = self.processor.post_process_generation(
             generated_text,
-            task=text,
+            task=task,
             image_size=(resized_image.width, resized_image.height)
         )
 
+        print(f"Raw results: ")
+        print(f"{results}")
         bboxes = results[task]['bboxes']
         labels = results[task]['labels']
 
