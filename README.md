@@ -67,11 +67,11 @@ sudo docker run --gpus all -it --rm your_docker_hub_user_name/ptzapp:latest --mo
 | `--username` | `-un` | PTZ camera username | "" |
 | `--password` | `-pw` | PTZ camera password | "" |
 | `--cameraip` | `-ip` | PTZ camera IP address | "" |
-| `--objects` | `-obj` | Objects to detect (comma-separated or '*' with Florence) | "person" |
+| `--objects` | `-obj` | Objects to detect (comma-separated or '*' for everything) | "person" |
 | `--keepimages` | `-ki` | Keep collected images in persistent folder | False |
 | `--panstep` | `-ps` | Step of pan in degrees | 15 |
 | `--tilt` | `-tv` | Tilt value in degrees | 0 |
 | `--zoom` | `-zm` | Zoom value | 1 |
 | `--confidence` | `-conf` | Confidence threshold (0-1) | 0.1 |
-| `--iterdelay` | `-id` | Delay in seconds between iterations | 60.0 |
+| `--iterdelay` | `-id` | Minimum delay in seconds between iterations | 60.0 |
 | `--debug` | | Enable debug level logging | False |
