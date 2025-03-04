@@ -2,6 +2,26 @@
 
 This is an application for sending images of specific objects autonomously using PTZ cameras.
 
+## How It Works
+
+The algorithm performs the following steps:
+
+1. **Initialization**: Sets up object detection model (YOLO or Florence) based on user parameters.
+
+2. **Area Scanning**: Systematically scans the environment by rotating the PTZ camera in pan steps (default: 15 degrees) through a full 360° rotation at the specified tilt and zoom level.
+
+3. **Object Detection**: At each camera position, captures an image and runs object detection to identify specified objects (e.g., person, car, dog).
+
+4. **Filtering**: Filters detections based on confidence threshold (default: 0.1).
+
+5. **Object Tracking**: When an object of interest is detected with sufficient confidence, the algorithm:
+   - Centers the camera on the detected object
+   - Adjusts zoom to maximize the object in the frame
+
+6. **Image Publishing**: Saves and publishes the optimized images of detected objects.
+
+7. **Iteration**: Repeats the process for the specified number of iterations with configurable delay between scans.
+
 ## Build the container
 
 ```bash
