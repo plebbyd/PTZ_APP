@@ -25,7 +25,7 @@ inputs:
  - id: "password"
    type: "string"
  - id: "cameraip"
-   type: "string" 
+   type: "string"
  - id: "panstep"
    type: "int"
  - id: "tilt"
@@ -38,4 +38,7 @@ inputs:
    type: "float"
  - id: "confidence"
    type: "float"
-
+ - id: "keepimages"
+   type: "boolean"
+ - id: "debug"
+   type: "boolean"
