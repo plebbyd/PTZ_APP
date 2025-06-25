@@ -1,0 +1,39 @@
+{
+    "standard_yolo": [
+        "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
+        "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat",
+        "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack",
+        "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball",
+        "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket",
+        "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple",
+        "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake",
+        "chair", "couch", "potted plant", "bed", "dining table", "toilet", "tv", "laptop",
+        "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
+        "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"
+    ],
+    "yolo_oiv7": [
+        "Animal", "Auto part", "Baked goods", "Ball (Object)", "Balloon", "Bee", "Beer", 
+        "Bench", "Bicycle", "Bicycle helmet", "Bicycle wheel", "Billboard", "Bird", "Boat", 
+        "Book", "Bookcase", "Bottle", "Box", "Boy", "Building", "Bus", "Butterfly", 
+        "Cabinetry", "Cake", "Camera", "Candle", "Car", "Cat", "Cattle", "Chair", 
+        "Clothing", "Coat", "Coffee cup", "Coffee table", "Common sunflower", 
+        "Computer monitor", "Dairy Product", "Desk", "Dessert", "Dog", "Doll", "Door", 
+        "Dress", "Drink", "Drum", "Duck", "Fashion accessory", "Fast food", "Fish", 
+        "Fixed-wing aircraft", "Flag", "Flower", "Flowerpot", "Food", "Football", 
+        "Football helmet", "Footwear", "Fruit", "Furniture", "Girl", "Glasses", "Goggles", 
+        "Goose", "Guitar", "Hat", "Helmet", "Hiking equipment", "Horse", "House", 
+        "Houseplant", "Human arm", "Human body", "Human ear", "Human eye", "Human face", 
+        "Human hair", "Human hand", "Human head", "Human leg", "Human mouth", "Human nose", 
+        "Insect", "Jacket", "Jeans", "Land vehicle", "Lantern", "Laptop", "Lavender (Plant)", 
+        "Mammal", "Man", "Marine invertebrates", "Microphone", "Mobile phone", "Motorcycle", 
+        "Musical instrument", "Office supplies", "Orange (fruit)", "Paddle", "Palm tree", 
+        "Pastry", "Person", "Picture frame", "Plant", "Plate", "Poster", "Pumpkin", 
+        "Roller skates", "Rose", "Sculpture", "Shelf", "Shirt", "Shorts", "Skyscraper", 
+        "Snack", "Sports equipment", "Sports uniform", "Stairs", "Strawberry", "Street light", 
+        "Suit", "Sun hat", "Sunglasses", "Swimwear", "Table", "Tableware", "Tent", "Tie", 
+        "Tire", "Tomato", "Tower", "Toy", "Traffic light", "Traffic sign", "Train", "Tree", 
+        "Trousers", "Truck", "Umbrella", "Van", "Vegetable", "Vehicle", 
+        "Vehicle registration plate", "Watercraft", "Wheel", "Window", "Wine", "Wine glass", 
+        "Woman"
+    ]
+}
