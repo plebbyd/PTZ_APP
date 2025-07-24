@@ -10,7 +10,7 @@ from source.bring_data import (
 )
 from source.object_detector import DetectorFactory
 import logging
-
+from waggle.plugin import Plugin
 
 def get_argparser():
     parser = argparse.ArgumentParser("PTZ APP")
@@ -37,7 +37,7 @@ def get_argparser():
         "--objects",
         help="Objects to capture with the camera (comma-separated, e.g., 'person,car,dog')",
         type=str,
-        default="person",
+        default="bird,cat,dog,horse,sheep,cow,bear,animal",
     )
     parser.add_argument(
         "-un",
@@ -68,7 +68,7 @@ def get_argparser():
         "--model",
         help="Model to use (e.g., 'yolo11n', 'Florence-base')",
         type=str,
-        default="yolo11n",
+        default="Florence-base",
     )
     parser.add_argument(
         "-id",
@@ -88,7 +88,7 @@ def get_argparser():
     return parser
 
 
-def look_for_object(args):
+def look_for_object(args, plugin):
     objects = [obj.strip().lower() for obj in args.objects.split(",")]
     pans = [angle for angle in range(0, 360, args.panstep)]
     tilts = [args.tilt for _ in range(len(pans))]
@@ -106,7 +106,7 @@ def look_for_object(args):
         for pan, tilt, zoom in zip(pans, tilts, zooms):
             print(f"Trying PTZ: {pan} {tilt} {zoom}")
             image_path, detection = get_image_from_ptz_position(
-                args, objects, pan, tilt, zoom, detector, None
+                args, objects, pan, tilt, zoom, detector, None, plugin
             )
 
             if detection is None or detection["reward"] > (1 - args.confidence):
@@ -127,7 +127,7 @@ def look_for_object(args):
             if os.path.exists(image_path):
                 os.remove(image_path)
 
-        publish_images()
+        publish_images(plugin)
 
         iteration_time = time.time() - iteration_start_time
         if args.iterdelay > 0:
@@ -140,7 +140,8 @@ def look_for_object(args):
 def main():
     args = get_argparser().parse_args()
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
-    look_for_object(args)
+    with Plugin() as plugin:
+        look_for_object(args, plugin)
 
 
 if __name__ == "__main__":

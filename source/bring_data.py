@@ -9,7 +9,7 @@ from PIL import Image
 from pathlib import Path
 from source import sunapi_control as camera_control
 from source.object_detector import get_label_from_image_and_object
-
+import json
 from waggle.plugin import Plugin
 
 logger = logging.getLogger(__name__)
@@ -126,7 +126,7 @@ def center_and_maximize_object(args, bbox, image, reward=None, label=None):
         except Exception as e:
             logger.error("Error saving detection image: %s", e)
 
-def get_image_from_ptz_position(args, object_, pan, tilt, zoom, model, processor):
+def get_image_from_ptz_position(args, object_, pan, tilt, zoom, model, processor, plugin):
     try:
         Camera1 = camera_control.CameraControl(
             args.cameraip, args.username, args.password
@@ -141,7 +141,10 @@ def get_image_from_ptz_position(args, object_, pan, tilt, zoom, model, processor
     image = Image.open(aux_image_path)
     os.remove(aux_image_path)
 
-    detections = get_label_from_image_and_object(image, object_, model, processor)
+    detections, raw_results = get_label_from_image_and_object(image, object_, model, processor)
+
+    if raw_results:
+        plugin.publish("ptz.florence.raw_output", json.dumps(raw_results))
     
     if not detections:
         LABEL = None
@@ -158,14 +161,13 @@ def get_image_from_ptz_position(args, object_, pan, tilt, zoom, model, processor
     image_path = grab_image(camera=Camera1, args=args, action=random.randint(0,20))
     return image_path, LABEL
 
-def publish_images():
-    with Plugin() as plugin:
-        ct = str(datetime.datetime.now())
-        for image_file in os.listdir(tmp_dir):
-            complete_path = os.path.join(tmp_dir, image_file)
-            print('Publishing')
-            print(complete_path)
-            plugin.upload_file(complete_path)
+def publish_images(plugin: Plugin):
+    ct = str(datetime.datetime.now())
+    for image_file in os.listdir(tmp_dir):
+        complete_path = os.path.join(tmp_dir, image_file)
+        print('Publishing')
+        print(complete_path)
+        plugin.upload_file(complete_path)
 
     shutil.rmtree(tmp_dir, ignore_errors=True)
 

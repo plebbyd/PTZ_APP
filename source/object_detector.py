@@ -55,7 +55,7 @@ class YOLODetector(ObjectDetector):
             print(f"Error loading model {self.model_name}: {str(e)}")
             raise RuntimeError(f"Failed to load YOLO model {self.model_name}. Error: {str(e)}")
 
-    def detect(self, image: Image.Image, target_objects: Union[str, List[str]]) -> Tuple[List[float], List[List[int]], List[str]]:
+    def detect(self, image: Image.Image, target_objects: Union[str, List[str]]) -> Tuple[List[float], List[List[int]], List[str], dict]:
         """
         Detect objects using YOLO
         Args:
@@ -92,7 +92,7 @@ class YOLODetector(ObjectDetector):
                     labels.append(cls)
                     rewards.append(1 - conf)  # Convert confidence to reward (lower is better)
 
-        return rewards, bboxes, labels
+        return rewards, bboxes, labels, {}
 
 class FlorenceDetector(ObjectDetector):
     """Florence model implementation of object detector"""
@@ -129,7 +129,7 @@ class FlorenceDetector(ObjectDetector):
         
         self.model.eval()
 
-    def detect(self, image: Image.Image, target_objects: Union[str, List[str]]) -> Tuple[List[float], List[List[int]], List[str]]:
+    def detect(self, image: Image.Image, target_objects: Union[str, List[str]]) -> Tuple[List[float], List[List[int]], List[str], dict]:
         """Detect objects using Florence"""
         # Generate text prompt from target objects provided. The special case
         # of * should allow Florence-2 to detect any object which seems to
@@ -139,7 +139,7 @@ class FlorenceDetector(ObjectDetector):
             task = "<OD>"
         elif isinstance(target_objects, list):
             joined = " or ".join(target_objects)
-            text = f"<CAPTION_TO_PHRASE_GROUNDING> {joined}"
+            text = f"<CAPTION_TO_PHRASE_GROUNDING> Find any of these animals in the scene: {joined}"
             task = "<CAPTION_TO_PHRASE_GROUNDING>"
         else:
             text = f"<CAPTION_TO_PHRASE_GROUNDING> {target_objects}"
@@ -190,7 +190,7 @@ class FlorenceDetector(ObjectDetector):
             area_ratio = ((bbox[2] - bbox[0]) * (bbox[3] - bbox[1])) / (image.width * image.height)
             rewards.append(area_ratio)
 
-        return rewards, bboxes, labels
+        return rewards, bboxes, labels, results
 
 class DetectorFactory:
     """Factory class to create appropriate object detector"""
@@ -301,7 +301,7 @@ def get_label_from_image_and_object(
     Unified interface for object detection
     Returns: List of dictionaries with 'reward', 'bbox', and 'label' keys
     """
-    rewards, bboxes, labels = detector.detect(image, target_object)
+    rewards, bboxes, labels, raw_results = detector.detect(image, target_object)
     
     # Convert to list of dictionaries
     results = []
@@ -315,4 +315,4 @@ def get_label_from_image_and_object(
     if not results:
         return []
         
-    return results
+    return results, raw_results
