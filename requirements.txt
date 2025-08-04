@@ -1,9 +1,11 @@
 timm
 pywaggle[all]
 huggingface_hub
-ultralytics>=8.3.70
-torch>=2.0.0
-transformers>=4.30.0
+ultralytics
+torch==2.1.2
+transformers==4.36.2
+accelerate==0.26.1
+flash-attn
 pillow>=9.0.0
 numpy>=1.21.0
 requests>=2.25.0
