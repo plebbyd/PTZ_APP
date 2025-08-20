@@ -8,6 +8,8 @@ COPY . ./
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
 
+RUN pip install flash-attn --no-build-isolation
+
 # Copy and run the OpenCV fix script
 COPY opencv-fix.py /tmp/
 RUN python /tmp/opencv-fix.py
