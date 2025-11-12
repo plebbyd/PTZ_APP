@@ -126,6 +126,138 @@ def center_and_maximize_object(args, bbox, image, reward=None, label=None):
         except Exception as e:
             logger.error("Error saving detection image: %s", e)
 
+def center_and_maximize_objects_absolute(
+        args, 
+        detections, 
+        image
+    ):
+    # Get camera current absolute position and zoom level
+    try:
+        Camera1 = camera_control.CameraControl(
+            args.cameraip, args.username, args.password
+        )
+    except Exception as e:
+        logger.error("Error when getting camera: %s", e)
+
+    current_pan, current_tilt, current_zoom = Camera1.requesting_cameras_position_information()
+    print(f'zoom_level: {current_zoom}')
+
+    # Get current FOV based on zoom level
+    current_h_fov, current_v_fov = get_fov_from_zoom(current_zoom)
+    print('current_h_fov: ', current_h_fov)
+    print('current_v_fov: ', current_v_fov)
+
+    absolute_positions = []
+    zoom_levels = []
+    image_paths = []
+    for detection in detections:
+        # compute all of the absolute positions of the detections
+        # and the required zoom level to maximize the object size
+        bbox = detection['bbox']
+        reward = detection['reward']
+        label = detection['label']
+
+        if reward > (1 - args.confidence):
+            continue
+
+        
+        x1, y1, x2, y2 = bbox
+        image_width, image_height = image.size
+        
+        print(f'x1: {x1}')
+        print(f'y1: {y1}')
+        print(f'x2: {x2}')
+        print(f'y2: {y2}')
+        print(f'image_width: {image_width}')
+        print(f'image_height: {image_height}')
+
+        # Calculate the center of the bounding box
+        bbox_center_x = (x1 + x2) / 2
+        bbox_center_y = (y1 + y2) / 2
+        
+        # Calculate the center of the image
+        image_center_x = image_width / 2
+        image_center_y = image_height / 2
+        
+        # Calculate the difference between the centers in pixels
+        diff_x = image_center_x - bbox_center_x
+        diff_y = image_center_y - bbox_center_y
+
+        if diff_x < 0:
+            print('MOVE RIGHT')
+        else:
+            print('MOVE LEFT')
+        
+        if diff_y < 0:
+            print('MOVE DOWN')
+        else:
+            print('MOVE UP')
+    
+    
+        # Convert pixel difference to degrees
+        pan = -(diff_x / image_width) * current_h_fov
+        tilt = -(diff_y / image_height) * current_v_fov
+
+        absolute_pan = current_pan + pan
+        absolute_tilt = current_tilt + tilt
+
+        if absolute_pan > 360:
+            absolute_pan = absolute_pan - 360
+        elif absolute_pan < 0:
+            absolute_pan = absolute_pan + 360
+
+        if absolute_tilt > 90:
+            absolute_tilt = 90
+        elif absolute_tilt < -20:
+            absolute_tilt = -20
+
+
+        absolute_positions.append((absolute_pan, absolute_tilt))
+
+    
+        # Calculate the current size of the bounding box
+        bbox_width = x2 - x1
+        bbox_height = y2 - y1
+    
+        # Calculate the zoom factor to maximize the object size
+        zoom_factor_x = image_width / bbox_width
+        zoom_factor_y = image_height / bbox_height
+        zoom_factor = min(zoom_factor_x, zoom_factor_y)
+        print('zoom_factor_x: ', zoom_factor_x)
+        print('zoom_factor_y: ', zoom_factor_y)
+        print('zoom_factor: ', zoom_factor)
+        
+        # Calculate relative zoom
+        mz=1
+        MZ=40
+        current_zoom_factor = current_zoom / MZ
+        target_zoom_factor = current_zoom_factor * zoom_factor
+        relative_zoom = target_zoom_factor * (MZ - mz) - current_zoom
+        print('current_zoom_factor: ', current_zoom_factor)
+        print('target_zoom_factor: ', target_zoom_factor)
+        
+        absolute_zoom = current_zoom + relative_zoom
+        if absolute_zoom > 40:
+            absolute_zoom = 40
+        elif absolute_zoom < 1:
+            absolute_zoom = 1
+
+        zoom_levels.append(absolute_zoom)
+
+        timestamp = time.strftime('%Y%m%d_%H%M%S')
+        confidence = 1 - reward
+        ptz_string = f"{int(absolute_pan)}_{int(absolute_tilt)}_{int(absolute_zoom)}"
+        filename = f"{ptz_string}_{label}_conf{confidence:.2f}_{timestamp}.jpg"
+        image_path = os.path.join(tmp_dir, filename)
+        image_paths.append(image_path)
+    
+    for (absolute_pan, absolute_tilt), absolute_zoom, image_path in zip(absolute_positions, zoom_levels, image_paths):
+        try:
+            Camera1.absolute_control(absolute_pan, absolute_tilt, absolute_zoom)
+            Camera1.snap_shot(image_path)
+        except Exception as e:
+            logger.error("Error saving detection image: %s", e)
+
 def get_image_from_ptz_position(args, object_, pan, tilt, zoom, model, processor):
     try:
         Camera1 = camera_control.CameraControl(
@@ -157,6 +289,35 @@ def get_image_from_ptz_position(args, object_, pan, tilt, zoom, model, processor
 
     image_path = grab_image(camera=Camera1, args=args, action=random.randint(0,20))
     return image_path, LABEL
+
+def get_image_from_ptz_position_multiboxes(
+        args, 
+        object_, 
+        pan, 
+        tilt, 
+        zoom, 
+        model, 
+        processor
+    ):
+    try:
+        Camera1 = camera_control.CameraControl(
+            args.cameraip, args.username, args.password
+        )
+    except Exception as e:
+        logger.error("Error when getting camera: %s", e)
+
+    Camera1.absolute_control(pan, tilt, zoom)
+    tmp_dir.mkdir(exist_ok=True, mode=0o777)
+
+    aux_image_path = grab_image(camera=Camera1, args=args, action=0)
+    image = Image.open(aux_image_path)
+    os.remove(aux_image_path)
+
+    detections = get_label_from_image_and_object(image, object_, model, processor)
+    
+
+    image_path = grab_image(camera=Camera1, args=args, action=random.randint(0,20))
+    return image_path, detections
 
 def publish_images():
     with Plugin() as plugin:
