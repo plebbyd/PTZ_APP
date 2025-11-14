@@ -5,7 +5,9 @@ import time
 from PIL import Image
 from source.bring_data import (
     center_and_maximize_object,
+    center_and_maximize_objects_absolute,
     get_image_from_ptz_position,
+    get_image_from_ptz_position_multiboxes,
     publish_images,
 )
 from source.object_detector import DetectorFactory
@@ -84,6 +86,12 @@ def get_argparser():
         type=float,
         default=0.1,
     )
+    parser.add_argument(
+        "-multiple",
+        "--multiple",
+        help="Save multiple images for each discrete PTZ position (default=False)",
+        action="store_true",
+    )
 
     return parser
 
@@ -105,24 +113,40 @@ def look_for_object(args):
 
         for pan, tilt, zoom in zip(pans, tilts, zooms):
             print(f"Trying PTZ: {pan} {tilt} {zoom}")
-            image_path, detection = get_image_from_ptz_position(
-                args, objects, pan, tilt, zoom, detector, None
-            )
 
-            if detection is None or detection["reward"] > (1 - args.confidence):
-                if image_path and os.path.exists(image_path):
-                    os.remove(image_path)
-                continue
+            if not args.multiple:
+                image_path, detection = get_image_from_ptz_position(
+                    args, objects, pan, tilt, zoom, detector, None
+                )
+                if detection is None or detection["reward"] > (1 - args.confidence):
+                    if image_path and os.path.exists(image_path):
+                        os.remove(image_path)
+                    continue
 
-            label = detection["label"]
-            bbox = detection["bbox"]
-            reward = detection["reward"]
-            confidence = 1 - reward
+                label = detection["label"]
+                bbox = detection["bbox"]
+                reward = detection["reward"]
+                confidence = 1 - reward
 
-            print(f"Following {label} object (confidence: {confidence:.2f})")
+                print(f"Following {label} object (confidence: {confidence:.2f})")
 
-            image = Image.open(image_path)
-            center_and_maximize_object(args, bbox, image, reward, label)
+                image = Image.open(image_path)
+                center_and_maximize_object(args, bbox, image, reward, label)
+            else:
+                # get multiple images for each detection
+                image_path, detections = get_image_from_ptz_position_multiboxes(
+                    args, objects, pan, tilt, zoom, detector, None
+                )
+                
+                if not detections:
+                    if image_path and os.path.exists(image_path):
+                        os.remove(image_path)
+                    continue
+                
+                image = Image.open(image_path)
+                center_and_maximize_objects_absolute(args, detections, image)
+                
+
 
             if os.path.exists(image_path):
                 os.remove(image_path)
