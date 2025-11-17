@@ -107,7 +107,7 @@ class FlorenceDetector(ObjectDetector):
         self.model = None
         self.processor = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+        self.dtype = torch.float16 if torch.cuda.is_available() else torch.float32
         self.load_model()
 
     def load_model(self):
@@ -116,9 +116,10 @@ class FlorenceDetector(ObjectDetector):
         
         self.model = AutoModelForCausalLM.from_pretrained(
             model_dir,
-            torch_dtype=self.torch_dtype,
+            dtype=self.dtype,
             trust_remote_code=True,
-            local_files_only=True
+            local_files_only=True,
+            attn_implementation="eager"
         ).to(self.device)
         
         self.processor = AutoProcessor.from_pretrained(
@@ -156,7 +157,7 @@ class FlorenceDetector(ObjectDetector):
             text=text,
             images=resized_image,
             return_tensors="pt"
-        ).to(self.device, self.torch_dtype)
+        ).to(self.device, self.dtype)
 
         with torch.no_grad():
             generated_ids = self.model.generate(
