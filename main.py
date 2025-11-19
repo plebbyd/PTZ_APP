@@ -92,6 +92,11 @@ def get_argparser():
         help="Save multiple images for each discrete PTZ position (default=False)",
         action="store_true",
     )
+    parser.add_argument(
+        "--debug-detections",
+        action="store_true",
+        help="Publish images with detection boxes drawn for debugging",
+    )
 
     return parser
 
@@ -116,7 +121,7 @@ def look_for_object(args):
 
             if not args.multiple:
                 image_path, detection = get_image_from_ptz_position(
-                    args, objects, pan, tilt, zoom, detector, None
+                    args, objects, pan, tilt, zoom, detector, None, args.debug_detections
                 )
                 if detection is None or detection["reward"] > (1 - args.confidence):
                     if image_path and os.path.exists(image_path):
@@ -135,7 +140,7 @@ def look_for_object(args):
             else:
                 # get multiple images for each detection
                 image_path, detections = get_image_from_ptz_position_multiboxes(
-                    args, objects, pan, tilt, zoom, detector, None
+                    args, objects, pan, tilt, zoom, detector, None, args.debug_detections
                 )
                 
                 if not detections:
