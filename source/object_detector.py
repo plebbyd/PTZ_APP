@@ -116,7 +116,7 @@ class FlorenceDetector(ObjectDetector):
         
         self.model = AutoModelForCausalLM.from_pretrained(
             model_dir,
-            dtype=self.dtype,
+            torch_dtype=self.dtype,
             trust_remote_code=True,
             local_files_only=True,
             attn_implementation="eager"
