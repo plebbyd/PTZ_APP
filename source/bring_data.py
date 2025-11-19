@@ -5,7 +5,7 @@ import math
 import random
 import time
 import datetime
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 from source import sunapi_control as camera_control
 from source.object_detector import get_label_from_image_and_object
@@ -14,6 +14,63 @@ from waggle.plugin import Plugin
 
 logger = logging.getLogger(__name__)
 
+
+def draw_detections_on_image(image, detections, confidence_threshold):
+    """
+    Draw bounding boxes and labels on image for detections above threshold
+    Args:
+        image: PIL Image
+        detections: List of detection dictionaries with 'bbox', 'label', 'reward' keys
+        confidence_threshold: Minimum confidence to draw (reward = 1 - confidence)
+    Returns:
+        PIL Image with drawn boxes
+    """
+    # Create a copy to avoid modifying the original
+    img_copy = image.copy()
+    draw = ImageDraw.Draw(img_copy)
+    
+    # Try to use a better font, fall back to default if not available
+    try:
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 20)
+    except:
+        font = ImageFont.load_default()
+    
+    for detection in detections:
+        reward = detection['reward']
+        confidence = 1 - reward
+        
+        # Only draw detections above threshold
+        if confidence >= confidence_threshold:
+            bbox = detection['bbox']
+            label = detection['label']
+            
+            x1, y1, x2, y2 = bbox
+            
+            # Draw rectangle
+            draw.rectangle([x1, y1, x2, y2], outline="red", width=3)
+            
+            # Draw label background
+            label_text = f"{label}: {confidence:.2f}"
+            
+            # Get text bounding box
+            try:
+                bbox_text = draw.textbbox((x1, y1), label_text, font=font)
+                text_width = bbox_text[2] - bbox_text[0]
+                text_height = bbox_text[3] - bbox_text[1]
+            except:
+                # Fallback for older PIL versions
+                text_width, text_height = draw.textsize(label_text, font=font)
+            
+            # Draw background rectangle for text
+            draw.rectangle(
+                [x1, y1 - text_height - 4, x1 + text_width + 4, y1],
+                fill="red"
+            )
+            
+            # Draw text
+            draw.text((x1 + 2, y1 - text_height - 2), label_text, fill="white", font=font)
+    
+    return img_copy
 
 
 try:
@@ -258,7 +315,7 @@ def center_and_maximize_objects_absolute(
         except Exception as e:
             logger.error("Error saving detection image: %s", e)
 
-def get_image_from_ptz_position(args, object_, pan, tilt, zoom, model, processor):
+def get_image_from_ptz_position(args, object_, pan, tilt, zoom, model, processor, debug_detections=False):
     try:
         Camera1 = camera_control.CameraControl(
             args.cameraip, args.username, args.password
@@ -286,6 +343,17 @@ def get_image_from_ptz_position(args, object_, pan, tilt, zoom, model, processor
             'reward': best_detection['reward'],
             'first': True
         }
+        
+        # If debug mode is enabled and there are detections above threshold, save debug image
+        if debug_detections:
+            detections_above_threshold = [d for d in detections if (1 - d['reward']) >= args.confidence]
+            if detections_above_threshold:
+                debug_image = draw_detections_on_image(image, detections_above_threshold, args.confidence)
+                timestamp = time.strftime('%Y%m%d_%H%M%S')
+                debug_filename = f"debug_{pan}_{tilt}_{zoom}_{timestamp}.jpg"
+                debug_path = os.path.join(tmp_dir, debug_filename)
+                debug_image.save(debug_path)
+                print(f"Saved debug image: {debug_filename}")
 
     image_path = grab_image(camera=Camera1, args=args, action=random.randint(0,20))
     return image_path, LABEL
@@ -297,7 +365,8 @@ def get_image_from_ptz_position_multiboxes(
         tilt, 
         zoom, 
         model, 
-        processor
+        processor,
+        debug_detections=False
     ):
     try:
         Camera1 = camera_control.CameraControl(
@@ -315,6 +384,16 @@ def get_image_from_ptz_position_multiboxes(
 
     detections = get_label_from_image_and_object(image, object_, model, processor)
     
+    # If debug mode is enabled and there are detections above threshold, save debug image
+    if debug_detections and detections:
+        detections_above_threshold = [d for d in detections if (1 - d['reward']) >= args.confidence]
+        if detections_above_threshold:
+            debug_image = draw_detections_on_image(image, detections_above_threshold, args.confidence)
+            timestamp = time.strftime('%Y%m%d_%H%M%S')
+            debug_filename = f"debug_{pan}_{tilt}_{zoom}_{timestamp}.jpg"
+            debug_path = os.path.join(tmp_dir, debug_filename)
+            debug_image.save(debug_path)
+            print(f"Saved debug image: {debug_filename}")
 
     image_path = grab_image(camera=Camera1, args=args, action=random.randint(0,20))
     return image_path, detections
