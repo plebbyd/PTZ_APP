@@ -175,11 +175,14 @@ def center_and_maximize_object(args, bbox, image, reward=None, label=None, incre
     if reward is not None and reward < (1 - args.confidence) and label is not None:
         confidence = 1 - reward
         
+        # Replace spaces in label with underscores for filename
+        safe_label = label.replace(' ', '_')
+        
         # Use increment_id in filename instead of PTZ string
         if increment_id:
-            filename = f"{increment_id}_{label}_conf{confidence:.2f}.jpg"
+            filename = f"{increment_id}_{safe_label}_conf{confidence:.2f}.jpg"
         else:
-            filename = f"{label}_conf{confidence:.2f}.jpg"
+            filename = f"{safe_label}_conf{confidence:.2f}.jpg"
         
         image_path = os.path.join(tmp_dir, filename)
         
@@ -190,9 +193,9 @@ def center_and_maximize_object(args, bbox, image, reward=None, label=None, incre
             # Then rename with timestamp from when image was taken
             timestamp = time.strftime('%Y%m%d_%H%M%S')
             if increment_id:
-                new_filename = f"{increment_id}_{label}_conf{confidence:.2f}_{timestamp}.jpg"
+                new_filename = f"{increment_id}_{safe_label}_conf{confidence:.2f}_{timestamp}.jpg"
             else:
-                new_filename = f"{label}_conf{confidence:.2f}_{timestamp}.jpg"
+                new_filename = f"{safe_label}_conf{confidence:.2f}_{timestamp}.jpg"
             
             new_image_path = os.path.join(tmp_dir, new_filename)
             os.rename(image_path, new_image_path)
@@ -326,11 +329,14 @@ def center_and_maximize_objects_absolute(
         try:
             Camera1.absolute_control(absolute_pan, absolute_tilt, absolute_zoom)
             
+            # Replace spaces in label with underscores for filename
+            safe_label = label.replace(' ', '_')
+            
             # Create filename with increment_id instead of PTZ string
             if increment_id:
-                filename = f"{increment_id}_{label}_conf{confidence:.2f}.jpg"
+                filename = f"{increment_id}_{safe_label}_conf{confidence:.2f}.jpg"
             else:
-                filename = f"{label}_conf{confidence:.2f}.jpg"
+                filename = f"{safe_label}_conf{confidence:.2f}.jpg"
             
             image_path = os.path.join(tmp_dir, filename)
             
@@ -340,9 +346,9 @@ def center_and_maximize_objects_absolute(
             # Rename with timestamp from when image was taken
             timestamp = time.strftime('%Y%m%d_%H%M%S')
             if increment_id:
-                new_filename = f"{increment_id}_{label}_conf{confidence:.2f}_{timestamp}.jpg"
+                new_filename = f"{increment_id}_{safe_label}_conf{confidence:.2f}_{timestamp}.jpg"
             else:
-                new_filename = f"{label}_conf{confidence:.2f}_{timestamp}.jpg"
+                new_filename = f"{safe_label}_conf{confidence:.2f}_{timestamp}.jpg"
             
             new_image_path = os.path.join(tmp_dir, new_filename)
             os.rename(image_path, new_image_path)
