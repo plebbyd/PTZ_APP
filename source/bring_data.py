@@ -82,7 +82,7 @@ except OSError:
         "Could not create directories, will use default paths and the code might break"
     )
 
-def center_and_maximize_object(args, bbox, image, reward=None, label=None):
+def center_and_maximize_object(args, bbox, image, reward=None, label=None, increment_id=None):
     x1, y1, x2, y2 = bbox
     image_width, image_height = image.size
     
@@ -173,20 +173,37 @@ def center_and_maximize_object(args, bbox, image, reward=None, label=None):
         logger.error("Error when setting relative position: %s", e)
 
     if reward is not None and reward < (1 - args.confidence) and label is not None:
-        timestamp = time.strftime('%Y%m%d_%H%M%S')
         confidence = 1 - reward
-        filename = f"{label}_conf{confidence:.2f}_{timestamp}.jpg"
+        
+        # Use increment_id in filename instead of PTZ string
+        if increment_id:
+            filename = f"{increment_id}_{label}_conf{confidence:.2f}.jpg"
+        else:
+            filename = f"{label}_conf{confidence:.2f}.jpg"
+        
         image_path = os.path.join(tmp_dir, filename)
         
         try:
+            # Take snapshot first
             Camera1.snap_shot(image_path)
+            
+            # Then rename with timestamp from when image was taken
+            timestamp = time.strftime('%Y%m%d_%H%M%S')
+            if increment_id:
+                new_filename = f"{increment_id}_{label}_conf{confidence:.2f}_{timestamp}.jpg"
+            else:
+                new_filename = f"{label}_conf{confidence:.2f}_{timestamp}.jpg"
+            
+            new_image_path = os.path.join(tmp_dir, new_filename)
+            os.rename(image_path, new_image_path)
         except Exception as e:
             logger.error("Error saving detection image: %s", e)
 
 def center_and_maximize_objects_absolute(
         args, 
         detections, 
-        image
+        image,
+        increment_id=None
     ):
     # Get camera current absolute position and zoom level
     try:
@@ -206,7 +223,8 @@ def center_and_maximize_objects_absolute(
 
     absolute_positions = []
     zoom_levels = []
-    image_paths = []
+    labels_and_confidences = []
+    
     for detection in detections:
         # compute all of the absolute positions of the detections
         # and the required zoom level to maximize the object size
@@ -300,22 +318,39 @@ def center_and_maximize_objects_absolute(
             absolute_zoom = 1
 
         zoom_levels.append(absolute_zoom)
-
-        timestamp = time.strftime('%Y%m%d_%H%M%S')
+        
         confidence = 1 - reward
-        ptz_string = f"{int(absolute_pan)}_{int(absolute_tilt)}_{int(absolute_zoom)}"
-        filename = f"{ptz_string}_{label}_conf{confidence:.2f}_{timestamp}.jpg"
-        image_path = os.path.join(tmp_dir, filename)
-        image_paths.append(image_path)
+        labels_and_confidences.append((label, confidence))
     
-    for (absolute_pan, absolute_tilt), absolute_zoom, image_path in zip(absolute_positions, zoom_levels, image_paths):
+    for (absolute_pan, absolute_tilt), absolute_zoom, (label, confidence) in zip(absolute_positions, zoom_levels, labels_and_confidences):
         try:
             Camera1.absolute_control(absolute_pan, absolute_tilt, absolute_zoom)
+            
+            # Create filename with increment_id instead of PTZ string
+            if increment_id:
+                filename = f"{increment_id}_{label}_conf{confidence:.2f}.jpg"
+            else:
+                filename = f"{label}_conf{confidence:.2f}.jpg"
+            
+            image_path = os.path.join(tmp_dir, filename)
+            
+            # Take snapshot
             Camera1.snap_shot(image_path)
+            
+            # Rename with timestamp from when image was taken
+            timestamp = time.strftime('%Y%m%d_%H%M%S')
+            if increment_id:
+                new_filename = f"{increment_id}_{label}_conf{confidence:.2f}_{timestamp}.jpg"
+            else:
+                new_filename = f"{label}_conf{confidence:.2f}_{timestamp}.jpg"
+            
+            new_image_path = os.path.join(tmp_dir, new_filename)
+            os.rename(image_path, new_image_path)
+            
         except Exception as e:
             logger.error("Error saving detection image: %s", e)
 
-def get_image_from_ptz_position(args, object_, pan, tilt, zoom, model, processor, debug_detections=False):
+def get_image_from_ptz_position(args, object_, pan, tilt, zoom, model, processor, debug_detections=False, increment_id=None):
     try:
         Camera1 = camera_control.CameraControl(
             args.cameraip, args.username, args.password
@@ -350,7 +385,11 @@ def get_image_from_ptz_position(args, object_, pan, tilt, zoom, model, processor
             if detections_above_threshold:
                 debug_image = draw_detections_on_image(image, detections_above_threshold, args.confidence)
                 timestamp = time.strftime('%Y%m%d_%H%M%S')
-                debug_filename = f"debug_{pan}_{tilt}_{zoom}_{timestamp}.jpg"
+                # Use increment_id in debug filename if available
+                if increment_id:
+                    debug_filename = f"{increment_id}_debug_{timestamp}.jpg"
+                else:
+                    debug_filename = f"debug_{pan}_{tilt}_{zoom}_{timestamp}.jpg"
                 debug_path = os.path.join(tmp_dir, debug_filename)
                 debug_image.save(debug_path)
                 print(f"Saved debug image: {debug_filename}")
@@ -366,7 +405,8 @@ def get_image_from_ptz_position_multiboxes(
         zoom, 
         model, 
         processor,
-        debug_detections=False
+        debug_detections=False,
+        increment_id=None
     ):
     try:
         Camera1 = camera_control.CameraControl(
@@ -390,7 +430,11 @@ def get_image_from_ptz_position_multiboxes(
         if detections_above_threshold:
             debug_image = draw_detections_on_image(image, detections_above_threshold, args.confidence)
             timestamp = time.strftime('%Y%m%d_%H%M%S')
-            debug_filename = f"debug_{pan}_{tilt}_{zoom}_{timestamp}.jpg"
+            # Use increment_id in debug filename if available
+            if increment_id:
+                debug_filename = f"{increment_id}_debug_{timestamp}.jpg"
+            else:
+                debug_filename = f"debug_{pan}_{tilt}_{zoom}_{timestamp}.jpg"
             debug_path = os.path.join(tmp_dir, debug_filename)
             debug_image.save(debug_path)
             print(f"Saved debug image: {debug_filename}")
