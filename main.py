@@ -116,12 +116,14 @@ def look_for_object(args):
     for iteration in range(args.iterations):
         iteration_start_time = time.time()
 
-        for pan, tilt, zoom in zip(pans, tilts, zooms):
-            print(f"Trying PTZ: {pan} {tilt} {zoom}")
+        for idx, (pan, tilt, zoom) in enumerate(zip(pans, tilts, zooms)):
+            # Create increment ID based on initial PTZ position
+            increment_id = f"scan_{pan:03d}_{tilt:03d}_{zoom:02d}"
+            print(f"Trying PTZ: {pan} {tilt} {zoom} (ID: {increment_id})")
 
             if not args.multiple:
                 image_path, detection = get_image_from_ptz_position(
-                    args, objects, pan, tilt, zoom, detector, None, args.debug_detections
+                    args, objects, pan, tilt, zoom, detector, None, args.debug_detections, increment_id
                 )
                 if detection is None or detection["reward"] > (1 - args.confidence):
                     if image_path and os.path.exists(image_path):
@@ -136,11 +138,11 @@ def look_for_object(args):
                 print(f"Following {label} object (confidence: {confidence:.2f})")
 
                 image = Image.open(image_path)
-                center_and_maximize_object(args, bbox, image, reward, label)
+                center_and_maximize_object(args, bbox, image, reward, label, increment_id)
             else:
                 # get multiple images for each detection
                 image_path, detections = get_image_from_ptz_position_multiboxes(
-                    args, objects, pan, tilt, zoom, detector, None, args.debug_detections
+                    args, objects, pan, tilt, zoom, detector, None, args.debug_detections, increment_id
                 )
                 
                 if not detections:
@@ -149,14 +151,15 @@ def look_for_object(args):
                     continue
                 
                 image = Image.open(image_path)
-                center_and_maximize_objects_absolute(args, detections, image)
+                center_and_maximize_objects_absolute(args, detections, image, increment_id)
                 
 
 
             if os.path.exists(image_path):
                 os.remove(image_path)
 
-        publish_images()
+            # Publish images after each increment
+            publish_images()
 
         iteration_time = time.time() - iteration_start_time
         if args.iterdelay > 0:
