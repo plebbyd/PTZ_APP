@@ -204,10 +204,10 @@ def center_and_maximize_object(args, bbox, image, reward=None, label=None, incre
             new_image_path = os.path.join(tmp_dir, new_filename)
             os.rename(image_path, new_image_path)
             
-            # Store metadata for this image (use safe_label with underscores)
+            # Store metadata for this image (all values must be strings for pywaggle)
             image_metadata[new_filename] = {
                 "class": safe_label,
-                "score": confidence
+                "score": f"{confidence:.2f}"
             }
         except Exception as e:
             logger.error("Error saving detection image: %s", e)
@@ -364,10 +364,10 @@ def center_and_maximize_objects_absolute(
             new_image_path = os.path.join(tmp_dir, new_filename)
             os.rename(image_path, new_image_path)
             
-            # Store metadata for this image (use safe_label with underscores)
+            # Store metadata for this image (all values must be strings for pywaggle)
             image_metadata[new_filename] = {
                 "class": safe_label,
-                "score": confidence
+                "score": f"{confidence:.2f}"
             }
             
         except Exception as e:
