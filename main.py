@@ -68,7 +68,7 @@ def get_argparser():
     parser.add_argument(
         "-m",
         "--model",
-        help="Model to use (e.g., 'yolo11n', 'Florence-base')",
+        help="Model(s) to use (comma-separated for multiple, e.g., 'yolo11n' or 'yolo11n,Florence-base')",
         type=str,
         default="yolo11n",
     )
@@ -107,10 +107,22 @@ def look_for_object(args):
     tilts = [args.tilt for _ in range(len(pans))]
     zooms = [args.zoom for _ in range(len(pans))]
 
-    try:
-        detector = DetectorFactory.create_detector(args.model, args.objects)
-    except ValueError as e:
-        print(f"Error creating detector: {str(e)}")
+    # Parse model string - can be single or comma-separated list
+    model_names = [model.strip() for model in args.model.split(",")]
+    
+    # Create detectors for each model
+    detectors = []
+    for model_name in model_names:
+        try:
+            detector = DetectorFactory.create_detector(model_name, args.objects)
+            detectors.append(detector)
+            print(f"Successfully loaded model: {model_name}")
+        except ValueError as e:
+            print(f"Error creating detector for {model_name}: {str(e)}")
+            sys.exit(1)
+    
+    if not detectors:
+        print("No valid detectors created")
         sys.exit(1)
 
     for iteration in range(args.iterations):
@@ -123,7 +135,7 @@ def look_for_object(args):
 
             if not args.multiple:
                 image_path, detection = get_image_from_ptz_position(
-                    args, objects, pan, tilt, zoom, detector, None, args.debug_detections, increment_id
+                    args, objects, pan, tilt, zoom, detectors, None, args.debug_detections, increment_id
                 )
                 if detection is None or detection["reward"] > (1 - args.confidence):
                     if image_path and os.path.exists(image_path):
@@ -142,7 +154,7 @@ def look_for_object(args):
             else:
                 # get multiple images for each detection
                 image_path, detections = get_image_from_ptz_position_multiboxes(
-                    args, objects, pan, tilt, zoom, detector, None, args.debug_detections, increment_id
+                    args, objects, pan, tilt, zoom, detectors, None, args.debug_detections, increment_id
                 )
                 
                 if not detections:
