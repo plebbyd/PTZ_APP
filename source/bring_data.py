@@ -373,7 +373,7 @@ def center_and_maximize_objects_absolute(
         except Exception as e:
             logger.error("Error saving detection image: %s", e)
 
-def get_image_from_ptz_position(args, object_, pan, tilt, zoom, model, processor, debug_detections=False, increment_id=None):
+def get_image_from_ptz_position(args, object_, pan, tilt, zoom, detectors, processor, debug_detections=False, increment_id=None):
     try:
         Camera1 = camera_control.CameraControl(
             args.cameraip, args.username, args.password
@@ -388,7 +388,7 @@ def get_image_from_ptz_position(args, object_, pan, tilt, zoom, model, processor
     image = Image.open(aux_image_path)
     os.remove(aux_image_path)
 
-    detections = get_label_from_image_and_object(image, object_, model, processor)
+    detections = get_label_from_image_and_object(image, object_, detectors, processor)
     
     if not detections:
         LABEL = None
@@ -426,7 +426,7 @@ def get_image_from_ptz_position_multiboxes(
         pan, 
         tilt, 
         zoom, 
-        model, 
+        detectors, 
         processor,
         debug_detections=False,
         increment_id=None
@@ -445,7 +445,7 @@ def get_image_from_ptz_position_multiboxes(
     image = Image.open(aux_image_path)
     os.remove(aux_image_path)
 
-    detections = get_label_from_image_and_object(image, object_, model, processor)
+    detections = get_label_from_image_and_object(image, object_, detectors, processor)
     
     # If debug mode is enabled and there are detections above threshold, save debug image
     if debug_detections and detections:

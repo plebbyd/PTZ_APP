@@ -9,6 +9,92 @@ from PIL import Image
 from ultralytics import YOLO
 from transformers import AutoProcessor, AutoModelForCausalLM
 
+
+def compute_iou(box1, box2):
+    """
+    Compute Intersection over Union (IoU) between two bounding boxes
+    Args:
+        box1, box2: [x1, y1, x2, y2] format
+    Returns:
+        IoU value between 0 and 1
+    """
+    x1_min, y1_min, x1_max, y1_max = box1
+    x2_min, y2_min, x2_max, y2_max = box2
+    
+    # Calculate intersection
+    inter_x_min = max(x1_min, x2_min)
+    inter_y_min = max(y1_min, y2_min)
+    inter_x_max = min(x1_max, x2_max)
+    inter_y_max = min(y1_max, y2_max)
+    
+    if inter_x_max < inter_x_min or inter_y_max < inter_y_min:
+        return 0.0
+    
+    inter_area = (inter_x_max - inter_x_min) * (inter_y_max - inter_y_min)
+    
+    # Calculate union
+    box1_area = (x1_max - x1_min) * (y1_max - y1_min)
+    box2_area = (x2_max - x2_min) * (y2_max - y2_min)
+    union_area = box1_area + box2_area - inter_area
+    
+    return inter_area / union_area if union_area > 0 else 0.0
+
+
+def combine_detections_from_models(detections_list: List[List[Dict]], iou_threshold: float = 0.5) -> List[Dict]:
+    """
+    Combine detections from multiple models, merging overlapping detections
+    Args:
+        detections_list: List of detection lists from different models
+        iou_threshold: IoU threshold for considering boxes as duplicates
+    Returns:
+        Combined list of detections with duplicates merged
+    """
+    if not detections_list:
+        return []
+    
+    # Flatten all detections into a single list
+    all_detections = []
+    for detections in detections_list:
+        all_detections.extend(detections)
+    
+    if not all_detections:
+        return []
+    
+    # Sort by confidence (lower reward = higher confidence)
+    all_detections.sort(key=lambda x: x['reward'])
+    
+    # Non-maximum suppression with label matching
+    final_detections = []
+    
+    for detection in all_detections:
+        should_add = True
+        bbox = detection['bbox']
+        label = detection['label'].lower()
+        
+        for existing in final_detections:
+            existing_bbox = existing['bbox']
+            existing_label = existing['label'].lower()
+            
+            # Only merge if labels are the same or similar
+            if label == existing_label or label in existing_label or existing_label in label:
+                iou = compute_iou(bbox, existing_bbox)
+                
+                if iou > iou_threshold:
+                    # This detection overlaps significantly with an existing one
+                    # Keep the one with better confidence (lower reward)
+                    if detection['reward'] < existing['reward']:
+                        # Replace existing with this better detection
+                        existing['bbox'] = bbox
+                        existing['reward'] = detection['reward']
+                        existing['label'] = detection['label']
+                    should_add = False
+                    break
+        
+        if should_add:
+            final_detections.append(detection)
+    
+    return final_detections
+
 class ObjectDetector(ABC):
     """Abstract base class for object detection models"""
     
@@ -295,25 +381,57 @@ class DetectorFactory:
 def get_label_from_image_and_object(
     image: Image.Image,
     target_object: str,
-    detector: ObjectDetector,
+    detector: Union[ObjectDetector, List[ObjectDetector]],
     processor=None  # Kept for backwards compatibility
 ) -> List[Dict]:
     """
     Unified interface for object detection
+    Args:
+        image: Input image
+        target_object: Target object(s) to detect
+        detector: Single detector or list of detectors
+        processor: Kept for backwards compatibility
     Returns: List of dictionaries with 'reward', 'bbox', and 'label' keys
     """
-    rewards, bboxes, labels = detector.detect(image, target_object)
-    
-    # Convert to list of dictionaries
-    results = []
-    for reward, bbox, label in zip(rewards, bboxes, labels):
-        results.append({
-            'reward': reward,
-            'bbox': bbox,
-            'label': label
-        })
-    
-    if not results:
-        return []
+    # Handle both single detector and list of detectors
+    if isinstance(detector, list):
+        # Multiple detectors - run each and combine results
+        all_detections = []
         
-    return results
+        for det in detector:
+            print(f"Running detection with {det.__class__.__name__}...")
+            rewards, bboxes, labels = det.detect(image, target_object)
+            
+            # Convert to list of dictionaries
+            detections = []
+            for reward, bbox, label in zip(rewards, bboxes, labels):
+                detections.append({
+                    'reward': reward,
+                    'bbox': bbox,
+                    'label': label
+                })
+            
+            print(f"  Found {len(detections)} detections")
+            all_detections.append(detections)
+        
+        # Combine detections from all models
+        combined_results = combine_detections_from_models(all_detections)
+        print(f"Combined total: {len(combined_results)} detections after merging")
+        return combined_results
+    else:
+        # Single detector - original behavior
+        rewards, bboxes, labels = detector.detect(image, target_object)
+        
+        # Convert to list of dictionaries
+        results = []
+        for reward, bbox, label in zip(rewards, bboxes, labels):
+            results.append({
+                'reward': reward,
+                'bbox': bbox,
+                'label': label
+            })
+        
+        if not results:
+            return []
+            
+        return results
