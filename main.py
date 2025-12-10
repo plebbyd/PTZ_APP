@@ -145,12 +145,14 @@ def look_for_object(args):
                 label = detection["label"]
                 bbox = detection["bbox"]
                 reward = detection["reward"]
+                model_name = detection.get("model", None)
                 confidence = 1 - reward
 
-                print(f"Following {label} object (confidence: {confidence:.2f})")
+                model_info = f" detected by {model_name}" if model_name else ""
+                print(f"Following {label} object (confidence: {confidence:.2f}){model_info}")
 
                 image = Image.open(image_path)
-                center_and_maximize_object(args, bbox, image, reward, label, increment_id)
+                center_and_maximize_object(args, bbox, image, reward, label, increment_id, model_name)
             else:
                 # get multiple images for each detection
                 image_path, detections = get_image_from_ptz_position_multiboxes(
