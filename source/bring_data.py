@@ -85,7 +85,7 @@ except OSError:
 # Dictionary to store metadata for images (keyed by filename)
 image_metadata = {}
 
-def center_and_maximize_object(args, bbox, image, reward=None, label=None, increment_id=None):
+def center_and_maximize_object(args, bbox, image, reward=None, label=None, increment_id=None, model_name=None):
     x1, y1, x2, y2 = bbox
     image_width, image_height = image.size
     
@@ -205,10 +205,13 @@ def center_and_maximize_object(args, bbox, image, reward=None, label=None, incre
             os.rename(image_path, new_image_path)
             
             # Store metadata for this image (all values must be strings for pywaggle)
-            image_metadata[new_filename] = {
+            metadata = {
                 "class": safe_label,
                 "score": f"{confidence:.2f}"
             }
+            if model_name:
+                metadata["model"] = model_name
+            image_metadata[new_filename] = metadata
         except Exception as e:
             logger.error("Error saving detection image: %s", e)
 
@@ -236,7 +239,7 @@ def center_and_maximize_objects_absolute(
 
     absolute_positions = []
     zoom_levels = []
-    labels_and_confidences = []
+    labels_confidences_models = []
     
     for detection in detections:
         # compute all of the absolute positions of the detections
@@ -244,6 +247,7 @@ def center_and_maximize_objects_absolute(
         bbox = detection['bbox']
         reward = detection['reward']
         label = detection['label']
+        model_name = detection.get('model', None)
 
         if reward > (1 - args.confidence):
             continue
@@ -333,10 +337,10 @@ def center_and_maximize_objects_absolute(
         zoom_levels.append(absolute_zoom)
         
         confidence = 1 - reward
-        labels_and_confidences.append((label, confidence))
+        labels_confidences_models.append((label, confidence, model_name))
     
     global image_metadata
-    for (absolute_pan, absolute_tilt), absolute_zoom, (label, confidence) in zip(absolute_positions, zoom_levels, labels_and_confidences):
+    for (absolute_pan, absolute_tilt), absolute_zoom, (label, confidence, model_name) in zip(absolute_positions, zoom_levels, labels_confidences_models):
         try:
             Camera1.absolute_control(absolute_pan, absolute_tilt, absolute_zoom)
             
@@ -365,10 +369,13 @@ def center_and_maximize_objects_absolute(
             os.rename(image_path, new_image_path)
             
             # Store metadata for this image (all values must be strings for pywaggle)
-            image_metadata[new_filename] = {
+            metadata = {
                 "class": safe_label,
                 "score": f"{confidence:.2f}"
             }
+            if model_name:
+                metadata["model"] = model_name
+            image_metadata[new_filename] = metadata
             
         except Exception as e:
             logger.error("Error saving detection image: %s", e)
@@ -477,7 +484,8 @@ def publish_images():
             print('Publishing')
             print(complete_path)
             if meta:
-                print(f"  Metadata: class={meta.get('class')}, score={meta.get('score')}")
+                model_info = f", model={meta.get('model')}" if meta.get('model') else ""
+                print(f"  Metadata: class={meta.get('class')}, score={meta.get('score')}{model_info}")
             
             plugin.upload_file(complete_path, meta=meta)
 

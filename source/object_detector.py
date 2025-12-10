@@ -70,6 +70,7 @@ def combine_detections_from_models(detections_list: List[List[Dict]], iou_thresh
         should_add = True
         bbox = detection['bbox']
         label = detection['label'].lower()
+        model_name = detection.get('model', 'unknown')
         
         for existing in final_detections:
             existing_bbox = existing['bbox']
@@ -87,6 +88,12 @@ def combine_detections_from_models(detections_list: List[List[Dict]], iou_thresh
                         existing['bbox'] = bbox
                         existing['reward'] = detection['reward']
                         existing['label'] = detection['label']
+                        existing['model'] = model_name
+                    else:
+                        # Keep existing but note that multiple models detected it
+                        existing_model = existing.get('model', 'unknown')
+                        if existing_model != model_name and model_name not in existing_model:
+                            existing['model'] = f"{existing_model},{model_name}"
                     should_add = False
                     break
         
@@ -391,7 +398,7 @@ def get_label_from_image_and_object(
         target_object: Target object(s) to detect
         detector: Single detector or list of detectors
         processor: Kept for backwards compatibility
-    Returns: List of dictionaries with 'reward', 'bbox', and 'label' keys
+    Returns: List of dictionaries with 'reward', 'bbox', 'label', and 'model' keys
     """
     # Handle both single detector and list of detectors
     if isinstance(detector, list):
@@ -399,7 +406,9 @@ def get_label_from_image_and_object(
         all_detections = []
         
         for det in detector:
-            print(f"Running detection with {det.__class__.__name__}...")
+            # Get a human-readable model name
+            model_name = _get_model_name(det)
+            print(f"Running detection with {model_name}...")
             rewards, bboxes, labels = det.detect(image, target_object)
             
             # Convert to list of dictionaries
@@ -408,7 +417,8 @@ def get_label_from_image_and_object(
                 detections.append({
                     'reward': reward,
                     'bbox': bbox,
-                    'label': label
+                    'label': label,
+                    'model': model_name
                 })
             
             print(f"  Found {len(detections)} detections")
@@ -420,6 +430,7 @@ def get_label_from_image_and_object(
         return combined_results
     else:
         # Single detector - original behavior
+        model_name = _get_model_name(detector)
         rewards, bboxes, labels = detector.detect(image, target_object)
         
         # Convert to list of dictionaries
@@ -428,10 +439,21 @@ def get_label_from_image_and_object(
             results.append({
                 'reward': reward,
                 'bbox': bbox,
-                'label': label
+                'label': label,
+                'model': model_name
             })
         
         if not results:
             return []
             
         return results
+
+
+def _get_model_name(detector: ObjectDetector) -> str:
+    """Get a human-readable model name from a detector instance"""
+    if isinstance(detector, YOLODetector):
+        return detector.model_name
+    elif isinstance(detector, FlorenceDetector):
+        return f"Florence-{detector.model_size}"
+    else:
+        return detector.__class__.__name__
