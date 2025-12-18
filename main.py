@@ -68,7 +68,7 @@ def get_argparser():
     parser.add_argument(
         "-m",
         "--model",
-        help="Model(s) to use (comma-separated for multiple, e.g., 'yolo11n' or 'yolo11n,Florence-base')",
+        help="Model(s) to use (comma-separated for multiple, e.g., 'yolo11n' or 'yolo11n,Florence-base' or 'BioCLIP')",
         type=str,
         default="yolo11n",
     )

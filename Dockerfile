@@ -38,7 +38,23 @@ RUN huggingface-cli download \
 	--resume \
 	--force  # <-- ensures we overwrite any existing files or resume a download
 
-# 6. Set the environment variables for offline mode
+# 6. Download BioCLIP text embeddings
+RUN mkdir -p /bioclip_cache
+WORKDIR /bioclip_cache
+RUN huggingface-cli download \
+	imageomics/bioclip-demo \
+	txt_emb_species.npy \
+	txt_emb_species.json \
+	--repo-type space \
+	--local-dir . \
+	--cache-dir /hf_cache
+
+# 7. Move BioCLIP files to app directory for easy access
+WORKDIR /app
+RUN cp /bioclip_cache/txt_emb_species.npy /app/
+RUN cp /bioclip_cache/txt_emb_species.json /app/
+
+# 8. Set the environment variables for offline mode
 ENV HF_HOME=/hf_cache
 ENV TRANSFORMERS_OFFLINE=1
 ENV HF_DATASETS_OFFLINE=1
