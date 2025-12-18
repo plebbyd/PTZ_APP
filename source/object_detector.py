@@ -3,11 +3,18 @@ import os
 import re
 import torch
 import numpy as np
-from typing import Union, List, Set, Tuple, Dict
+import cv2
+import collections
+import heapq
+import torch.nn.functional as F
+from typing import Union, List, Set, Tuple, Dict, Optional
 from abc import ABC, abstractmethod
 from PIL import Image
 from ultralytics import YOLO
 from transformers import AutoProcessor, AutoModelForCausalLM
+from torchvision import transforms
+from huggingface_hub import hf_hub_download
+import open_clip
 
 
 def compute_iou(box1, box2):
@@ -286,6 +293,305 @@ class FlorenceDetector(ObjectDetector):
 
         return rewards, bboxes, labels
 
+
+class BioCLIPDetector(ObjectDetector):
+    """BioCLIP implementation of object detector with gradient-based localization"""
+    
+    # BioCLIP data files
+    TXT_EMB_NPY = "txt_emb_species.npy"
+    TXT_NAMES_JSON = "txt_emb_species.json"
+    RANKS = ("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
+    
+    def __init__(self, rank: str = "Class", target_taxon: str = "Animalia Chordata Mammalia"):
+        """
+        Initialize BioCLIP detector
+        Args:
+            rank: Taxonomic rank to classify at (default: "Class")
+            target_taxon: Target taxonomic group to detect (default: "Animalia Chordata Mammalia")
+        """
+        self.rank = rank
+        self.target_taxon = target_taxon
+        self.model = None
+        self.txt_emb = None
+        self.txt_names = None
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.preprocess_img = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Resize((224, 224), antialias=True),
+            transforms.Normalize(
+                mean=(0.48145466, 0.4578275, 0.40821073),
+                std=(0.26862954, 0.26130258, 0.27577711),
+            ),
+        ])
+        self.load_model()
+
+    def _download_bioclip_data_files(self):
+        """Download required BioCLIP data files if needed."""
+        repo_id = "imageomics/bioclip-demo"
+        
+        if os.path.exists(self.TXT_EMB_NPY) and os.path.exists(self.TXT_NAMES_JSON):
+            return self.TXT_EMB_NPY, self.TXT_NAMES_JSON
+        
+        print("Downloading BioCLIP text embeddings from Hugging Face...")
+        
+        if not os.path.exists(self.TXT_EMB_NPY):
+            npy_path = hf_hub_download(
+                repo_id=repo_id, filename=self.TXT_EMB_NPY, repo_type="space",
+                local_dir=".", local_dir_use_symlinks=False
+            )
+        else:
+            npy_path = self.TXT_EMB_NPY
+        
+        if not os.path.exists(self.TXT_NAMES_JSON):
+            json_path = hf_hub_download(
+                repo_id=repo_id, filename=self.TXT_NAMES_JSON, repo_type="space",
+                local_dir=".", local_dir_use_symlinks=False
+            )
+        else:
+            json_path = self.TXT_NAMES_JSON
+        
+        return npy_path, json_path
+
+    def load_model(self):
+        """Load BioCLIP model and text embeddings"""
+        print("Loading BioCLIP model...")
+        
+        # Load model
+        self.model, _, _ = open_clip.create_model_and_transforms('hf-hub:imageomics/bioclip')
+        self.model = self.model.to(self.device)
+        self.model.eval()
+        
+        # Download and load text embeddings
+        npy_path, json_path = self._download_bioclip_data_files()
+        self.txt_emb = torch.from_numpy(np.load(npy_path, mmap_mode="r")).to(self.device)
+        
+        with open(json_path) as fd:
+            self.txt_names = json.load(fd)
+        
+        print(f"BioCLIP loaded with {self.txt_emb.shape[1]} species embeddings")
+
+    def _format_name(self, taxon, common):
+        """Format taxon name with optional common name."""
+        taxon = " ".join(taxon)
+        if not common:
+            return taxon
+        return f"{taxon} ({common})"
+
+    def _get_spatial_attribution(self, img_tensor, top_idx):
+        """
+        Generate Grad-CAM style spatial attribution map from layer 9.
+        Returns 2D spatial map [H, W] showing which regions contributed to classification.
+        """
+        # Store activation and gradient
+        activation = None
+        gradient = None
+        
+        def get_activation(module, input, output):
+            nonlocal activation
+            if isinstance(output, tuple):
+                output = output[0]
+            activation = output.detach()
+        
+        def get_gradient(module, grad_input, grad_output):
+            nonlocal gradient
+            if isinstance(grad_output[0], torch.Tensor):
+                gradient = grad_output[0].detach()
+        
+        # Register hooks on layer 9
+        hook_handles = []
+        for name, module in self.model.named_modules():
+            if name == 'visual.transformer.resblocks.9':
+                hook_handles.append(module.register_forward_hook(get_activation))
+                hook_handles.append(module.register_full_backward_hook(get_gradient))
+                break
+        
+        try:
+            # Forward pass
+            img_features = self.model.encode_image(img_tensor)
+            img_features = F.normalize(img_features, dim=-1)
+            
+            # Calculate logits
+            logits = (self.model.logit_scale.exp() * img_features @ self.txt_emb).squeeze()
+            
+            # Backward pass
+            self.model.zero_grad()
+            logits[top_idx].backward(retain_graph=True)
+            
+            # Generate attribution map
+            if activation is not None and gradient is not None:
+                # Transformer output: [B, N, C]
+                weights = gradient.abs().mean(dim=2)  # [B, N]
+                cam = weights  # [B, N]
+                
+                # Reshape to 2D spatial grid (remove CLS token)
+                B, N = cam.shape
+                grid_size = int(np.sqrt(N - 1))
+                
+                if grid_size * grid_size == N - 1:
+                    cam_spatial = cam[:, 1:].reshape(B, grid_size, grid_size)
+                    cam = cam_spatial.squeeze(0).cpu().numpy()
+                    
+                    # Normalize
+                    if cam.max() > cam.min():
+                        cam = (cam - cam.min()) / (cam.max() - cam.min())
+                    
+                    return cam
+            
+            return None
+            
+        finally:
+            # Remove hooks
+            for handle in hook_handles:
+                handle.remove()
+
+    def _get_bboxes_from_heatmap(self, heatmap: np.ndarray, threshold: float = 0.5, 
+                                  max_boxes: int = 5) -> list:
+        """Extract bounding boxes from attribution heatmap."""
+        # Threshold the heatmap
+        binary_mask = (heatmap > threshold).astype(np.uint8)
+        
+        # Find connected components
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_mask, connectivity=8)
+        
+        if num_labels <= 1:
+            return []
+        
+        # Collect all valid components
+        bboxes = []
+        for i in range(1, num_labels):
+            area = stats[i, cv2.CC_STAT_AREA]
+            
+            if area < 10:  # min_area
+                continue
+            
+            # Get bounding box
+            x = stats[i, cv2.CC_STAT_LEFT]
+            y = stats[i, cv2.CC_STAT_TOP]
+            w = stats[i, cv2.CC_STAT_WIDTH]
+            h = stats[i, cv2.CC_STAT_HEIGHT]
+            
+            # Calculate average intensity
+            mask = (labels == i).astype(np.uint8)
+            avg_intensity = float(np.mean(heatmap[mask == 1]))
+            
+            bboxes.append((x, y, x + w, y + h, area, avg_intensity))
+        
+        if not bboxes:
+            return []
+        
+        # Sort by intensity (descending)
+        bboxes.sort(key=lambda x: x[5], reverse=True)
+        
+        return bboxes[:max_boxes]
+
+    def detect(self, image: Image.Image, target_objects: Union[str, List[str]] = None) -> Tuple[List[float], List[List[int]], List[str]]:
+        """
+        Detect objects using BioCLIP classification + gradient-based localization
+        Args:
+            image: Input image
+            target_objects: Ignored for BioCLIP (uses self.target_taxon)
+        Returns:
+            Tuple of (rewards, bboxes, labels)
+        """
+        original_size = image.size
+        rank_idx = self.RANKS.index(self.rank)
+        
+        # Preprocess image
+        img_tensor = self.preprocess_img(image).to(self.device).unsqueeze(0)
+        img_tensor.requires_grad = True
+        
+        # Forward pass
+        img_features = self.model.encode_image(img_tensor)
+        img_features = F.normalize(img_features, dim=-1)
+        
+        # Calculate logits and probabilities
+        logits = (self.model.logit_scale.exp() * img_features @ self.txt_emb).squeeze()
+        probs = F.softmax(logits, dim=0)
+        
+        # Get predictions at specified rank
+        if rank_idx + 1 == len(self.RANKS):
+            # Species level
+            topk = probs.topk(5)
+            predictions = {
+                self._format_name(*self.txt_names[i]): float(prob) 
+                for i, prob in zip(topk.indices, topk.values)
+            }
+            top_idx = int(topk.indices[0])
+        else:
+            # Higher rank - aggregate species probabilities
+            output = collections.defaultdict(float)
+            idx_to_rank = {}
+            
+            for i in torch.nonzero(probs > 1e-9).squeeze():
+                rank_name = " ".join(self.txt_names[i][0][: rank_idx + 1])
+                output[rank_name] += probs[i]
+                if rank_name not in idx_to_rank:
+                    idx_to_rank[rank_name] = []
+                idx_to_rank[rank_name].append(i.item())
+            
+            topk_names = heapq.nlargest(5, output, key=output.get)
+            predictions = {name: float(output[name]) for name in topk_names}
+            top_rank = topk_names[0]
+            top_idx = max(idx_to_rank[top_rank], key=lambda i: probs[i].item())
+        
+        # Check if target taxon is in predictions
+        target_found = False
+        target_conf = 0.0
+        target_label = None
+        
+        for pred_name, pred_conf in predictions.items():
+            if self.target_taxon.lower() in pred_name.lower():
+                target_found = True
+                target_conf = pred_conf
+                target_label = pred_name
+                break
+        
+        if not target_found:
+            # Target taxon not detected
+            return [], [], []
+        
+        print(f"BioCLIP detected: {target_label} (confidence: {target_conf:.4f})")
+        
+        # Get spatial attribution map
+        spatial_map = self._get_spatial_attribution(img_tensor, top_idx)
+        
+        if spatial_map is None:
+            return [], [], []
+        
+        # Resize to 224x224 for bbox extraction
+        spatial_map_224 = cv2.resize(spatial_map, (224, 224), interpolation=cv2.INTER_LINEAR)
+        
+        # Extract bounding boxes
+        bboxes_data = self._get_bboxes_from_heatmap(spatial_map_224, threshold=0.4, max_boxes=5)
+        
+        if not bboxes_data:
+            return [], [], []
+        
+        # Convert to PTZ app format
+        bboxes = []
+        labels = []
+        rewards = []
+        
+        scale_x = original_size[0] / 224
+        scale_y = original_size[1] / 224
+        
+        for x1, y1, x2, y2, area, intensity in bboxes_data:
+            # Scale bbox to original image size
+            x1_scaled = int(x1 * scale_x)
+            y1_scaled = int(y1 * scale_y)
+            x2_scaled = int(x2 * scale_x)
+            y2_scaled = int(y2 * scale_y)
+            
+            bboxes.append([x1_scaled, y1_scaled, x2_scaled, y2_scaled])
+            labels.append(target_label)
+            
+            # reward = 1 - confidence (lower is better)
+            reward = 1 - target_conf
+            rewards.append(reward)
+        
+        return rewards, bboxes, labels
+
+
 class DetectorFactory:
     """Factory class to create appropriate object detector"""
     
@@ -326,6 +632,10 @@ class DetectorFactory:
         # If "*" is specified, any model can detect it
         if "*" in target_objects:
             return True
+        
+        # BioCLIP can detect any biological organism (doesn't use target_objects)
+        if 'bioclip' in model_name.lower():
+            return True
             
         # Get valid classes for the model
         valid_classes = {cls.lower() for cls in DetectorFactory.get_model_classes(model_name)}
@@ -342,10 +652,15 @@ class DetectorFactory:
         """
         Create and return appropriate detector based on model name and validation
         Args:
-            model_name: Full model name (e.g., 'yolov8n', 'yolo11n', 'Florence-base', 'yolov8n-oiv7')
-            target_objects: Objects to detect
+            model_name: Full model name (e.g., 'yolov8n', 'yolo11n', 'Florence-base', 'yolov8n-oiv7', 'BioCLIP')
+            target_objects: Objects to detect (ignored for BioCLIP)
         """
-        model_name = model_name.lower()
+        model_name_lower = model_name.lower()
+        
+        # BioCLIP detector
+        if 'bioclip' in model_name_lower:
+            print("Creating BioCLIP detector (Class rank: Animalia Chordata Mammalia)")
+            return BioCLIPDetector(rank="Class", target_taxon="Animalia Chordata Mammalia")
         
         # First validate if the model can detect the objects
         if not DetectorFactory.validate_objects_for_model(model_name, target_objects):
@@ -358,11 +673,11 @@ class DetectorFactory:
         yolo_oiv7_pattern = re.compile(r'^yolov8[nsmlex]-oiv7$')
         florence_pattern = re.compile(r'^florence-(base|large)$', re.IGNORECASE)
         
-        if 'yolo' in model_name:
-            if '-oiv7' in model_name:
-                if not yolo_oiv7_pattern.match(model_name):
+        if 'yolo' in model_name_lower:
+            if '-oiv7' in model_name_lower:
+                if not yolo_oiv7_pattern.match(model_name_lower):
                     raise ValueError("Invalid YOLO OIV7 model name. Must be: yolov8[n,s,m,l,x]-oiv7")
-            elif not yolo_pattern.match(model_name):
+            elif not yolo_pattern.match(model_name_lower):
                 raise ValueError(
                     "Invalid YOLO model name. Must be:\n"
                     "- yolov8[n,s,m,l,x] for YOLOv8\n"
@@ -372,8 +687,8 @@ class DetectorFactory:
                 )
             return YOLODetector(model_name)
             
-        elif 'florence' in model_name:
-            if not florence_pattern.match(model_name):
+        elif 'florence' in model_name_lower:
+            if not florence_pattern.match(model_name_lower):
                 raise ValueError("Invalid Florence model name. Must be: Florence-base or Florence-large")
             return FlorenceDetector(model_name)
             
@@ -382,7 +697,8 @@ class DetectorFactory:
                 "Invalid model type. Must be either:\n"
                 "- YOLO (e.g., 'yolov8n', 'yolo11n')\n"
                 "- YOLO OIV7 (e.g., 'yolov8n-oiv7')\n"
-                "- Florence (e.g., 'Florence-base')"
+                "- Florence (e.g., 'Florence-base')\n"
+                "- BioCLIP (e.g., 'BioCLIP')"
             )
 
 def get_label_from_image_and_object(
@@ -455,5 +771,7 @@ def _get_model_name(detector: ObjectDetector) -> str:
         return detector.model_name
     elif isinstance(detector, FlorenceDetector):
         return f"Florence-{detector.model_size}"
+    elif isinstance(detector, BioCLIPDetector):
+        return f"BioCLIP-{detector.rank}"
     else:
         return detector.__class__.__name__
