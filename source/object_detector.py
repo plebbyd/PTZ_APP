@@ -327,39 +327,72 @@ class BioCLIPDetector(ObjectDetector):
 
     def _download_bioclip_data_files(self):
         """Download required BioCLIP data files if needed."""
+        # Check multiple possible locations
+        possible_paths = [
+            ".",  # Current directory
+            "/app",  # Docker app directory
+            os.getcwd(),  # Current working directory
+        ]
+        
+        # Try to find existing files first
+        for base_path in possible_paths:
+            npy_path = os.path.join(base_path, self.TXT_EMB_NPY)
+            json_path = os.path.join(base_path, self.TXT_NAMES_JSON)
+            
+            if os.path.exists(npy_path) and os.path.exists(json_path):
+                print(f"Found BioCLIP embeddings at: {base_path}")
+                return npy_path, json_path
+        
+        # If not found, try to download (only works if not in offline mode)
+        print("BioCLIP text embeddings not found locally, attempting download...")
         repo_id = "imageomics/bioclip-demo"
         
-        if os.path.exists(self.TXT_EMB_NPY) and os.path.exists(self.TXT_NAMES_JSON):
-            return self.TXT_EMB_NPY, self.TXT_NAMES_JSON
-        
-        print("Downloading BioCLIP text embeddings from Hugging Face...")
-        
-        if not os.path.exists(self.TXT_EMB_NPY):
+        try:
             npy_path = hf_hub_download(
                 repo_id=repo_id, filename=self.TXT_EMB_NPY, repo_type="space",
                 local_dir=".", local_dir_use_symlinks=False
             )
-        else:
-            npy_path = self.TXT_EMB_NPY
-        
-        if not os.path.exists(self.TXT_NAMES_JSON):
             json_path = hf_hub_download(
                 repo_id=repo_id, filename=self.TXT_NAMES_JSON, repo_type="space",
                 local_dir=".", local_dir_use_symlinks=False
             )
-        else:
-            json_path = self.TXT_NAMES_JSON
-        
-        return npy_path, json_path
+            return npy_path, json_path
+        except Exception as e:
+            raise FileNotFoundError(
+                f"BioCLIP text embeddings not found and download failed: {e}\n"
+                f"Please ensure {self.TXT_EMB_NPY} and {self.TXT_NAMES_JSON} "
+                f"are present in one of: {possible_paths}"
+            )
 
     def load_model(self):
         """Load BioCLIP model and text embeddings"""
         print("Loading BioCLIP model...")
         
-        # Load model
-        self.model, _, _ = open_clip.create_model_and_transforms('hf-hub:imageomics/bioclip')
-        self.model = self.model.to(self.device)
-        self.model.eval()
+        # Temporarily disable HF_HUB_OFFLINE to allow loading from cache
+        # (open_clip needs to check cache via HF Hub, even in offline environments)
+        original_offline = os.environ.get('HF_HUB_OFFLINE', None)
+        try:
+            # Unset HF_HUB_OFFLINE if it's set
+            if 'HF_HUB_OFFLINE' in os.environ:
+                del os.environ['HF_HUB_OFFLINE']
+            
+            # Load model - use cache_dir to find pre-downloaded weights
+            cache_dir = os.environ.get('HF_HOME', '/hf_cache')
+            print(f"Loading BioCLIP from cache: {cache_dir}")
+            
+            self.model, _, _ = open_clip.create_model_and_transforms(
+                'hf-hub:imageomics/bioclip',
+                cache_dir=cache_dir
+            )
+            self.model = self.model.to(self.device)
+            self.model.eval()
+            
+            print("✓ BioCLIP model loaded successfully")
+            
+        finally:
+            # Restore original HF_HUB_OFFLINE setting
+            if original_offline is not None:
+                os.environ['HF_HUB_OFFLINE'] = original_offline
         
         # Download and load text embeddings
         npy_path, json_path = self._download_bioclip_data_files()
@@ -368,7 +401,7 @@ class BioCLIPDetector(ObjectDetector):
         with open(json_path) as fd:
             self.txt_names = json.load(fd)
         
-        print(f"BioCLIP loaded with {self.txt_emb.shape[1]} species embeddings")
+        print(f"✓ BioCLIP loaded with {self.txt_emb.shape[1]} species embeddings")
 
     def _format_name(self, taxon, common):
         """Format taxon name with optional common name."""
