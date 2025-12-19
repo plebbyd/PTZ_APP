@@ -73,6 +73,24 @@ def get_argparser():
         default="yolo11n",
     )
     parser.add_argument(
+        "--bioclip-rank",
+        help="Taxonomic rank for BioCLIP classification (default=Class). Options: Kingdom, Phylum, Class, Order, Family, Genus, Species",
+        type=str,
+        default="Class",
+    )
+    parser.add_argument(
+        "--bioclip-taxon",
+        help="Target taxon for BioCLIP to detect (default='Animalia Chordata Mammalia' for mammals). Examples: 'Animalia Chordata Aves' (birds), 'Animalia Arthropoda Insecta' (insects)",
+        type=str,
+        default="Animalia Chordata Mammalia",
+    )
+    parser.add_argument(
+        "--bioclip-confidence",
+        help="Confidence threshold for BioCLIP detections (0-1, default=0.3)",
+        type=float,
+        default=0.3,
+    )
+    parser.add_argument(
         "-id",
         "--iterdelay",
         help="Delay in seconds between iterations (default=0.0)",
@@ -114,7 +132,18 @@ def look_for_object(args):
     detectors = []
     for model_name in model_names:
         try:
-            detector = DetectorFactory.create_detector(model_name, args.objects)
+            # Pass BioCLIP-specific parameters if it's a BioCLIP model
+            if 'bioclip' in model_name.lower():
+                detector = DetectorFactory.create_detector(
+                    model_name, 
+                    args.objects,
+                    bioclip_rank=args.bioclip_rank,
+                    bioclip_taxon=args.bioclip_taxon,
+                    bioclip_confidence=args.bioclip_confidence
+                )
+            else:
+                detector = DetectorFactory.create_detector(model_name, args.objects)
+            
             detectors.append(detector)
             print(f"Successfully loaded model: {model_name}")
         except ValueError as e:
