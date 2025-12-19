@@ -256,6 +256,7 @@ def center_and_maximize_objects_absolute(
         x1, y1, x2, y2 = bbox
         image_width, image_height = image.size
         
+        
         print(f'x1: {x1}')
         print(f'y1: {y1}')
         print(f'x2: {x2}')

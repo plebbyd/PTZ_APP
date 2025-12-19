@@ -302,15 +302,28 @@ class BioCLIPDetector(ObjectDetector):
     TXT_NAMES_JSON = "txt_emb_species.json"
     RANKS = ("Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
     
-    def __init__(self, rank: str = "Class", target_taxon: str = "Animalia Chordata Mammalia"):
+    def __init__(self, rank: str = "Class", target_taxon: str = "Animalia Chordata Mammalia", min_confidence: float = 0.3):
         """
         Initialize BioCLIP detector
         Args:
             rank: Taxonomic rank to classify at (default: "Class")
             target_taxon: Target taxonomic group to detect (default: "Animalia Chordata Mammalia")
+            min_confidence: Minimum confidence threshold (default: 0.3)
         """
+        # Validate rank
+        if rank not in self.RANKS:
+            raise ValueError(
+                f"Invalid rank: {rank}. Must be one of: {', '.join(self.RANKS)}"
+            )
+        
         self.rank = rank
         self.target_taxon = target_taxon
+        self.min_confidence = min_confidence
+        
+        print(f"BioCLIP detector initialized:")
+        print(f"  - Rank: {rank}")
+        print(f"  - Target taxon: {target_taxon}")
+        print(f"  - Min confidence: {min_confidence}")
         self.model = None
         self.txt_emb = None
         self.txt_names = None
@@ -567,17 +580,22 @@ class BioCLIPDetector(ObjectDetector):
             top_rank = topk_names[0]
             top_idx = max(idx_to_rank[top_rank], key=lambda i: probs[i].item())
         
-        # Check if target taxon is in predictions
+        # Check if target taxon is in predictions with sufficient confidence
         target_found = False
         target_conf = 0.0
         target_label = None
         
         for pred_name, pred_conf in predictions.items():
             if self.target_taxon.lower() in pred_name.lower():
-                target_found = True
-                target_conf = pred_conf
-                target_label = pred_name
-                break
+                if pred_conf >= self.min_confidence:
+                    target_found = True
+                    target_conf = pred_conf
+                    target_label = pred_name
+                    break
+                else:
+                    # Found but confidence too low
+                    print(f"BioCLIP: Found {pred_name} but confidence {pred_conf:.4f} < {self.min_confidence:.4f}")
+                    return [], [], []
         
         if not target_found:
             # Target taxon not detected
@@ -681,19 +699,28 @@ class DetectorFactory:
         return any(obj in valid_classes for obj in target_objects)
 
     @staticmethod
-    def create_detector(model_name: str, target_objects: Union[str, List[str]]) -> 'ObjectDetector':
+    def create_detector(
+        model_name: str, 
+        target_objects: Union[str, List[str]],
+        bioclip_rank: str = "Class",
+        bioclip_taxon: str = "Animalia Chordata Mammalia",
+        bioclip_confidence: float = 0.3
+    ) -> 'ObjectDetector':
         """
         Create and return appropriate detector based on model name and validation
         Args:
             model_name: Full model name (e.g., 'yolov8n', 'yolo11n', 'Florence-base', 'yolov8n-oiv7', 'BioCLIP')
             target_objects: Objects to detect (ignored for BioCLIP)
+            bioclip_rank: Taxonomic rank for BioCLIP (default: "Class")
+            bioclip_taxon: Target taxon for BioCLIP (default: "Animalia Chordata Mammalia")
+            bioclip_confidence: Confidence threshold for BioCLIP (default: 0.3)
         """
         model_name_lower = model_name.lower()
         
         # BioCLIP detector
         if 'bioclip' in model_name_lower:
-            print("Creating BioCLIP detector (Class rank: Animalia Chordata Mammalia)")
-            return BioCLIPDetector(rank="Class", target_taxon="Animalia Chordata Mammalia")
+            print(f"Creating BioCLIP detector ({bioclip_rank} rank: {bioclip_taxon}, min confidence: {bioclip_confidence})")
+            return BioCLIPDetector(rank=bioclip_rank, target_taxon=bioclip_taxon, min_confidence=bioclip_confidence)
         
         # First validate if the model can detect the objects
         if not DetectorFactory.validate_objects_for_model(model_name, target_objects):
